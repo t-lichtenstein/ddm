@@ -1,10 +1,11 @@
 package de.hpi.ddm.structures;
 
+import java.io.Serializable;
 import java.util.List;
 
 import de.hpi.ddm.configuration.ConfigurationSingleton;
 
-public class BloomFilter {
+public class BloomFilter implements Serializable {
 
 	public static int DEFAULT_SIZE = 8 * 1024 * 1024 * ConfigurationSingleton.get().getDataSize();
 	
