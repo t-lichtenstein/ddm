@@ -3,20 +3,15 @@ package de.hpi.ddm.actors;
 import java.io.*;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
-import java.util.List;
 
 import akka.actor.AbstractLoggingActor;
 import akka.actor.ActorRef;
 import akka.actor.ActorSelection;
 import akka.actor.Props;
-import com.esotericsoftware.kryo.Kryo;
-import com.esotericsoftware.kryo.io.Input;
-import com.esotericsoftware.kryo.io.Output;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-import scala.Array;
-import scala.collection.mutable.HashMap;
+import java.util.HashMap;
 
 public class LargeMessageProxy extends AbstractLoggingActor {
 
@@ -26,14 +21,17 @@ public class LargeMessageProxy extends AbstractLoggingActor {
 
 	@Data @NoArgsConstructor @AllArgsConstructor
 	private class LargeMessagePackageCollection {
+		public int packageCounter;
 		public int packageAmount;
-		public List<LargeMessagePackage> largeMessagePackages;
-	}
+		public byte[][] payload;
 
-	@Data @NoArgsConstructor @AllArgsConstructor
-	private class LargeMessagePackage {
-		public int packageId;
-		public byte[] data;
+		public void incrementPackageCount(){
+			this.packageCounter++;
+		}
+
+		public void setPayload(int packageId, byte[] packageData){
+			this.payload[packageId] = packageData;
+		}
 	}
 
 	private HashMap<Integer, LargeMessagePackageCollection> largeMessageBuffer = new HashMap<>();
@@ -100,6 +98,7 @@ public class LargeMessageProxy extends AbstractLoggingActor {
 			out.writeObject(message.getMessage());
 			out.flush();
 			bytes = bos.toByteArray();
+			System.out.println("Initial serialzed message length: " + bytes.length);
 		} catch(IOException e) {
 			e.printStackTrace();
 		} finally {
@@ -114,17 +113,20 @@ public class LargeMessageProxy extends AbstractLoggingActor {
 			return;
 		}
 
-		int packageCount = (int)Math.ceil(bytes.length / (262144.0 - 8.0));
+		final int payloadBytes = 262144 - 12;
+		int packageCount = (int)Math.ceil(bytes.length / (double) payloadBytes);
 		int messageId = (int)Math.floor(Math.random() * Integer.MAX_VALUE);
-		System.out.println("ID " + messageId);
-		System.out.println("ID " + packageCount);
+		System.out.println("Sender ID " + messageId);
+		System.out.println("Sender Package Count: " + packageCount);
 		byte[] messageIdBytes = ByteBuffer.allocate(4).putInt(messageId).array();
+		byte[] packageCountBytes = ByteBuffer.allocate(4).putInt(packageCount).array();
 		for(int i = 0; i < packageCount; i++){
 			byte[] packageIdBytes = ByteBuffer.allocate(4).putInt(i).array();
-			byte[] dataBytes = Arrays.copyOfRange(bytes, (i*(262144 - 8)), Math.min(((i+1)*(262144 - 8))-1, bytes.length-1));
+			byte[] dataBytes = Arrays.copyOfRange(bytes, (i*payloadBytes), Math.min(((i+1)*payloadBytes), bytes.length));
 			try{
 				ByteArrayOutputStream outputStream = new ByteArrayOutputStream( );
 				outputStream.write(messageIdBytes);
+				outputStream.write(packageCountBytes);
 				outputStream.write(packageIdBytes);
 				outputStream.write(dataBytes);
 				BytesMessage bm = new BytesMessage<>(outputStream.toByteArray(), this.sender(), message.getReceiver());
@@ -145,37 +147,57 @@ public class LargeMessageProxy extends AbstractLoggingActor {
 	private void handle(BytesMessage<?> message) {
 		// Collect data
 		byte[] messageData = (byte[])message.getBytes();
-		System.out.println(messageData.length);
 		int messageId = byteArrayToInt(Arrays.copyOfRange(messageData, 0, 4));
-		int packageId = byteArrayToInt(Arrays.copyOfRange(messageData, 4, 8));
-		System.out.println(messageId + " " + packageId);
-		return;
+		int packageCount = byteArrayToInt(Arrays.copyOfRange(messageData, 4, 8));
+		int packageId = byteArrayToInt(Arrays.copyOfRange(messageData, 8, 12));
+		byte[] messagePayload = Arrays.copyOfRange(messageData, 12, messageData.length);
 
+		LargeMessagePackageCollection collection = largeMessageBuffer.get(messageId);
+		if(collection == null){
+			collection = new LargeMessagePackageCollection(0, packageCount, new byte[packageCount][]);
+			largeMessageBuffer.put(messageId, collection);
+		}
+		collection.incrementPackageCount();
+		collection.setPayload(packageId, messagePayload);
 
-		// Reassemble the message content, deserialize it and/or load the content from some local location before forwarding its content.
-		/*ByteArrayInputStream bis = new ByteArrayInputStream(messageData);
-		ObjectInput in = null;
-		Object o = null;
-		try {
-			in = new ObjectInputStream(bis);
-			o = in.readObject();
-
-			System.out.println(o.getClass().getName());
-		} catch(IOException e) {
-		} catch(ClassNotFoundException f) {
-
-		} finally {
+		if(collection.getPackageCounter() == packageCount) {
+			byte[] finalMessage = null;
 			try {
-				if (in != null) {
-					in.close();
+				ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+				for (byte[] entry : collection.getPayload()) {
+					outputStream.write(entry);
 				}
-			} catch (IOException ex) {
-				// ignore close exception
+				finalMessage = outputStream.toByteArray();
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
+
+			// Reassemble the message content, deserialize it and/or load the content from some local location before forwarding its content.
+			ByteArrayInputStream bis = new ByteArrayInputStream(finalMessage);
+			ObjectInput in = null;
+			Object o = null;
+			System.out.println(finalMessage.length);
+			try {
+				in = new ObjectInputStream(bis);
+				o = in.readObject();
+
+				BytesMessage bm = new BytesMessage<>(o, this.sender(), message.getReceiver());
+				message.getReceiver().tell(bm.getBytes(), message.getSender());
+
+				//System.out.println(o.getClass().getName());
+			} catch (IOException e) {
+				e.printStackTrace();
+			} catch (ClassNotFoundException f) {
+				f.printStackTrace();
+			} finally {
+				try {
+					if (in != null) {
+						in.close();
+					}
+				} catch (IOException ex) {
+					// ignore close exception
+				}
 			}
 		}
-
-		// Redirect message
-		BytesMessage bm = new BytesMessage<>(o, this.sender(), message.getReceiver());
-		message.getReceiver().tell(bm.getBytes(), message.getSender());*/
 	}
 }
