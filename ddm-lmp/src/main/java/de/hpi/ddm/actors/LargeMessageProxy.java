@@ -8,7 +8,6 @@ import akka.actor.AbstractLoggingActor;
 import akka.actor.ActorRef;
 import akka.actor.ActorSelection;
 import akka.actor.Props;
-import com.esotericsoftware.kryo.Kryo;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -134,9 +133,9 @@ public class LargeMessageProxy extends AbstractLoggingActor {
 			return;
 		}
 
-		// Maximal message size: 262144
+		// Maximal message size: 262144 bytes
 		final int metaInfoBytes = 12;
-		final int payloadBytes = 262000 - metaInfoBytes;
+		final int payloadBytes = 260000 - metaInfoBytes;
 
 		// Create package meta information (number of packages, package id)
 		int packageCount = (int) Math.ceil(messageBytes.length / (double) payloadBytes);
