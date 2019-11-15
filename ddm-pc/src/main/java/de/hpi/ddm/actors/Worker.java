@@ -97,13 +97,14 @@ public class Worker extends AbstractLoggingActor {
 	}
 
 	private void handle(Master.CrackMessage message) {
+		this.log().info("Received password hash to crack with id " + message.getId());
 		// Phase 1: Hint cracking
 		this.hintHashes = new ArrayList(Arrays.asList(message.getHints()));
 		this.crackedHints = new ArrayList<>();
 		char[] alphabet = message.getCharacters();
 		heapPermutation(alphabet, alphabet.length, alphabet.length, message.getHintsToCrack());
 		this.enoughHintsFound = false;
-		this.log().debug("Cracked " + this.crackedHints.size() + " hints for password id: " + message.getId());
+		this.log().info("Cracked " + this.crackedHints.size() + " hints for password id: " + message.getId());
 
 		List<Character> passwordAlphabet = new ArrayList<>();
 
@@ -198,7 +199,7 @@ public class Worker extends AbstractLoggingActor {
 			if (currentHintHash.equals(this.hintHashes.get(i))) {
 				this.hintHashes.remove(i);
 				this.crackedHints.add(possibleHint);
-				this.log().debug("Cracked hint number " + this.crackedHints.size() + ":" + possibleHint);
+				this.log().info("Cracked hint number " + this.crackedHints.size() + " : " + possibleHint);
 				break;
 			}
 		}

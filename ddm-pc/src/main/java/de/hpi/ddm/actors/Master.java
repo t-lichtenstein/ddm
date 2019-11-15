@@ -156,7 +156,7 @@ public class Master extends AbstractLoggingActor {
 		}
 
 		for (String[] line : lines) {
-			int id = Integer.parseInt(firstEntry[0]);
+			int id = Integer.parseInt(line[0]);
 			String password = line[4];
 			String[] hints = Arrays.copyOfRange(line, firstHintIndex, line.length);
 			this.messages.add(new CrackMessage(id, password, passwordLength, characters, hints, numberOfHintsToCrack));
