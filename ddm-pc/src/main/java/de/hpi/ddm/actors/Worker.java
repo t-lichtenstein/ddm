@@ -101,7 +101,8 @@ public class Worker extends AbstractLoggingActor {
 		// Phase 1: Hint cracking
 		this.hintHashes = new ArrayList(Arrays.asList(message.getHints()));
 		this.crackedHints = new ArrayList<>();
-		char[] alphabet = message.getCharacters();
+		// Copy is necessary because otherwise the value is shared among other worker instances on the same system
+		char[] alphabet = Arrays.copyOf(message.getCharacters(), message.getCharacters().length);
 		heapPermutation(alphabet, alphabet.length, alphabet.length, message.getHintsToCrack());
 		this.enoughHintsFound = false;
 		this.log().info("Cracked " + this.crackedHints.size() + " hints for password id: " + message.getId());

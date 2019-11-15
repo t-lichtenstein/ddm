@@ -40,11 +40,6 @@ public class Master extends AbstractLoggingActor {
 		private static final long serialVersionUID = -50374816448627600L;
 	}
 
-	@Data
-	public static class StartPollingCrackMessages implements Serializable {
-		private static final long serialVersionUID = -50374816448627601L;
-	}
-
 	@Data @NoArgsConstructor @AllArgsConstructor
 	public static class BatchMessage implements Serializable {
 		private static final long serialVersionUID = 8343040942748609598L;
