@@ -4,11 +4,7 @@ import java.io.Serializable;
 import java.util.*;
 import java.util.concurrent.LinkedBlockingQueue;
 
-import akka.actor.AbstractLoggingActor;
-import akka.actor.ActorRef;
-import akka.actor.PoisonPill;
-import akka.actor.Props;
-import akka.actor.Terminated;
+import akka.actor.*;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -69,9 +65,10 @@ public class Master extends AbstractLoggingActor {
 	private final ActorRef collector;
 	private final List<ActorRef> workers;
 	private int passwordCounter = 0;
+	private ArrayList<Integer> crackedPasswordIds = new ArrayList<Integer>();
 	private final Queue<ActorRef> idleWorkers = new LinkedBlockingQueue<>();
 	private final Queue<CrackMessage> messages = new LinkedBlockingQueue<>();
-
+	private final HashMap<ActorRef, ArrayList<CrackMessage>> workerToPasswordMapping = new HashMap<>();
 	private long startTime;
 	
 	/////////////////////
@@ -158,9 +155,15 @@ public class Master extends AbstractLoggingActor {
 		}
 
 		while (this.idleWorkers.size() > 0) {
-			this.idleWorkers
-					.remove()
-					.tell(this.messages.remove(), this.self());
+			ActorRef currentWorkerRef = this.idleWorkers.remove();
+			CrackMessage currentCrackMessage = this.messages.remove();
+			currentWorkerRef.tell(currentCrackMessage, this.self());
+			ArrayList<CrackMessage> currentWorkerMessages = workerToPasswordMapping.get(currentWorkerRef);
+			if(currentWorkerMessages == null){
+				currentWorkerMessages = new ArrayList<CrackMessage>();
+			}
+			currentWorkerMessages.add(currentCrackMessage);
+			workerToPasswordMapping.put(currentWorkerRef, currentWorkerMessages);
 		}
 
 		this.collector.tell(new Collector.CollectMessage("Processed batch of size " + message.getLines().size()), this.self());
@@ -186,7 +189,14 @@ public class Master extends AbstractLoggingActor {
 		this.context().watch(this.sender());
 		this.workers.add(this.sender());
 		if (this.messages.size() != 0) {
-			this.sender().tell(this.messages.remove(), this.self());
+			CrackMessage currentCrackMessage = this.messages.remove();
+			this.sender().tell(currentCrackMessage, this.self());
+			ArrayList<CrackMessage> currentWorkerMessages = workerToPasswordMapping.get(this.sender());
+			if(currentWorkerMessages == null){
+				currentWorkerMessages = new ArrayList<CrackMessage>();
+			}
+			currentWorkerMessages.add(currentCrackMessage);
+			workerToPasswordMapping.put(this.sender(), currentWorkerMessages);
 		} else {
 			this.idleWorkers.add(this.sender());
 		}
@@ -195,6 +205,7 @@ public class Master extends AbstractLoggingActor {
 
 	protected void handle(Worker.CrackedPasswordMessage message) {
 		passwordCounter--;
+		crackedPasswordIds.add(message.getId());
 		this.collector.tell(new Collector.CollectMessage(
 				"ID: " + message.getId() + " | Password: " + message.getPassword()
 		), this.self());
@@ -204,7 +215,14 @@ public class Master extends AbstractLoggingActor {
 			return;
 		} else {
 			if (this.messages.size() != 0) {
-				this.sender().tell(this.messages.remove(), this.self());
+				CrackMessage currentCrackMessage = this.messages.remove();
+				this.sender().tell(currentCrackMessage, this.self());
+				ArrayList<CrackMessage> currentWorkerMessages = workerToPasswordMapping.get(this.sender());
+				if(currentWorkerMessages == null){
+					currentWorkerMessages = new ArrayList<CrackMessage>();
+				}
+				currentWorkerMessages.add(currentCrackMessage);
+				workerToPasswordMapping.put(this.sender(), currentWorkerMessages);
 			} else {
 				this.sender().tell(PoisonPill.getInstance(), ActorRef.noSender());
 			}
@@ -214,6 +232,15 @@ public class Master extends AbstractLoggingActor {
 	protected void handle(Terminated message) {
 		this.context().unwatch(message.getActor());
 		this.workers.remove(message.getActor());
+		ArrayList<CrackMessage> workerCrackMessages = workerToPasswordMapping.get(message.getActor());
+		if(workerCrackMessages != null){
+			for(CrackMessage msg : workerCrackMessages){
+				if(!crackedPasswordIds.contains(msg.getId())){
+					System.out.println("Adding Password" + msg.getId() + " to the queue again!");
+					this.messages.add(msg);
+				}
+			}
+		}
 //		this.log().info("Unregistered {}", message.getActor());
 	}
 }

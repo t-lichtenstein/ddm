@@ -9,10 +9,7 @@ import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.List;
 
-import akka.actor.AbstractLoggingActor;
-import akka.actor.ActorRef;
-import akka.actor.PoisonPill;
-import akka.actor.Props;
+import akka.actor.*;
 import akka.cluster.Cluster;
 import akka.cluster.ClusterEvent.CurrentClusterState;
 import akka.cluster.ClusterEvent.MemberRemoved;
@@ -98,6 +95,7 @@ public class Worker extends AbstractLoggingActor {
 
 	private void handle(Master.CrackMessage message) {
 		this.log().info("Received password hash to crack with id " + message.getId());
+
 		// Phase 1: Hint cracking
 		this.hintHashes = new ArrayList(Arrays.asList(message.getHints()));
 		this.crackedHints = new ArrayList<>();
