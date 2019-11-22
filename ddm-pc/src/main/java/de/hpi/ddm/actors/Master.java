@@ -124,7 +124,6 @@ public class Master extends AbstractLoggingActor {
 		///////////////////////////////////////////////////////////////////////////////////////////////////////
 
 		if (message.getLines().isEmpty()) {
-			this.reader.tell(PoisonPill.getInstance(), ActorRef.noSender());
 			// this.terminate();
 			return;
 		}
@@ -154,7 +153,7 @@ public class Master extends AbstractLoggingActor {
 			this.messages.add(new CrackMessage(id, password, passwordLength, characters, hints, numberOfHintsToCrack));
 		}
 
-		while (this.idleWorkers.size() > 0) {
+		while (this.idleWorkers.size() > 0 && this.messages.size() > 0) {
 			ActorRef currentWorkerRef = this.idleWorkers.remove();
 			CrackMessage currentCrackMessage = this.messages.remove();
 			currentWorkerRef.tell(currentCrackMessage, this.self());
@@ -190,7 +189,6 @@ public class Master extends AbstractLoggingActor {
 		} else {
 			this.idleWorkers.add(this.sender());
 		}
-//		this.log().info("Registered {}", this.sender());
 	}
 
 	protected void handle(Worker.CrackedPasswordMessage message) {
@@ -209,7 +207,7 @@ public class Master extends AbstractLoggingActor {
 				this.sender().tell(currentCrackMessage, this.self());
 				workerToPasswordMapping.put(this.sender(), currentCrackMessage);
 			} else {
-				this.sender().tell(PoisonPill.getInstance(), ActorRef.noSender());
+				this.idleWorkers.add(this.sender());
 			}
 		}
 	}
@@ -220,8 +218,14 @@ public class Master extends AbstractLoggingActor {
 		CrackMessage workerCrackMessage = workerToPasswordMapping.get(message.getActor());
 		if(workerCrackMessage != null){
 			if(!crackedPasswordIds.contains(workerCrackMessage.getId())){
-				System.out.println("Adding Password" + workerCrackMessage.getId() + " to the queue again!");
+				this.log().info("Adding Password " + workerCrackMessage.getId() + " to the queue again!");
 				this.messages.add(workerCrackMessage);
+				while (this.idleWorkers.size() > 0 && this.messages.size() > 0) {
+					ActorRef currentWorkerRef = this.idleWorkers.remove();
+					CrackMessage currentCrackMessage = this.messages.remove();
+					currentWorkerRef.tell(currentCrackMessage, this.self());
+					workerToPasswordMapping.put(currentWorkerRef, currentCrackMessage);
+				}
 			}
 		}
 //		this.log().info("Unregistered {}", message.getActor());
