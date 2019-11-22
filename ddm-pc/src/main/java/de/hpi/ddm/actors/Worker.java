@@ -89,13 +89,12 @@ public class Worker extends AbstractLoggingActor {
 				.match(MemberUp.class, this::handle)
 				.match(MemberRemoved.class, this::handle)
 				.match(Master.CrackMessage.class, this::handle)
-				.matchAny(object -> this.log().info("Received unknown message: \"{}\"", object.toString()))
+				.matchAny(object -> this.log().warning("Received unknown message: \"{}\"", object.toString()))
 				.build();
 	}
 
 	private void handle(Master.CrackMessage message) {
-		this.log().info("Received password hash to crack with id " + message.getId());
-
+		this.log().debug("Received password hash to crack with id " + message.getId());
 		// Phase 1: Hint cracking
 		this.hintHashes = new ArrayList(Arrays.asList(message.getHints()));
 		this.crackedHints = new ArrayList<>();
@@ -103,7 +102,7 @@ public class Worker extends AbstractLoggingActor {
 		char[] alphabet = Arrays.copyOf(message.getCharacters(), message.getCharacters().length);
 		heapPermutation(alphabet, alphabet.length, alphabet.length, message.getHintsToCrack());
 		this.enoughHintsFound = false;
-		this.log().info("Cracked " + this.crackedHints.size() + " hints for password id: " + message.getId());
+		this.log().debug("Cracked " + this.crackedHints.size() + " hints for password id: " + message.getId());
 
 		List<Character> passwordAlphabet = new ArrayList<>();
 
@@ -198,7 +197,7 @@ public class Worker extends AbstractLoggingActor {
 			if (currentHintHash.equals(this.hintHashes.get(i))) {
 				this.hintHashes.remove(i);
 				this.crackedHints.add(possibleHint);
-				this.log().info("Cracked hint number " + this.crackedHints.size() + " : " + possibleHint);
+				this.log().debug("Cracked hint number " + this.crackedHints.size() + " : " + possibleHint);
 				break;
 			}
 		}

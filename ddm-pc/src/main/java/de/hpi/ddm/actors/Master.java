@@ -92,7 +92,7 @@ public class Master extends AbstractLoggingActor {
 				.match(Worker.CrackedPasswordMessage.class, this::handle)
 				.match(Terminated.class, this::handle)
 				.match(RegistrationMessage.class, this::handle)
-				.matchAny(object -> this.log().info("Received unknown message: \"{}\"", object.toString()))
+				.matchAny(object -> this.log().warning("Received unknown message: \"{}\"", object.toString()))
 				.build();
 	}
 
@@ -189,6 +189,7 @@ public class Master extends AbstractLoggingActor {
 		} else {
 			this.idleWorkers.add(this.sender());
 		}
+		this.log().debug("Registered {}", this.sender());
 	}
 
 	protected void handle(Worker.CrackedPasswordMessage message) {
@@ -218,7 +219,7 @@ public class Master extends AbstractLoggingActor {
 		CrackMessage workerCrackMessage = workerToPasswordMapping.get(message.getActor());
 		if(workerCrackMessage != null){
 			if(!crackedPasswordIds.contains(workerCrackMessage.getId())){
-				this.log().info("Adding Password " + workerCrackMessage.getId() + " to the queue again!");
+				this.log().info("Adding Password " + workerCrackMessage.getId() + " to the queue again");
 				this.messages.add(workerCrackMessage);
 				while (this.idleWorkers.size() > 0 && this.messages.size() > 0) {
 					ActorRef currentWorkerRef = this.idleWorkers.remove();
@@ -228,6 +229,6 @@ public class Master extends AbstractLoggingActor {
 				}
 			}
 		}
-//		this.log().info("Unregistered {}", message.getActor());
+		this.log().debug("Unregistered {}", message.getActor());
 	}
 }
