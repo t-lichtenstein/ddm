@@ -17,6 +17,9 @@ object TeamSchlau {
   def mergeSets = (accumulator1: (Set[String]), accumulator2: (Set[String])) =>
     (accumulator1.union(accumulator2))
 
+  def intersectSets = (accumulator1: (Set[String]), accumulator2: (Set[String])) =>
+    (accumulator1.intersect(accumulator2))
+
 
   def main(args: Array[String]): Unit = {
     // Parse input arguments
@@ -35,7 +38,7 @@ object TeamSchlau {
 
     val cores = arguments.getCores*/
     val cores = 4
-    val datasetPath = "./data/testdata"
+    val datasetPath = "./data/TPCH"
 
     // Get all .csv-files for the dataset path
     val fileRegex = """.*\.csv$""".r
@@ -54,6 +57,8 @@ object TeamSchlau {
 
     sparkSession.conf.set("spark.sql.shuffle.partitions", "16")
     import sparkSession.implicits._
+
+    val startTime = System.currentTimeMillis();
 
     // Read .csv-files
     val datasets: Seq[DataFrame] = files.map(file => {
@@ -79,7 +84,7 @@ object TeamSchlau {
 
     val inclusionLists:RDD[(String, Set[String])] = attributeSets.flatMap(row => row.toSeq.map(entry => (entry, row.filter(a => !a.equals(entry)))))
 
-    val aggregate:RDD[(String, Set[String])] = inclusionLists.combineByKey(createFromSetCombiner, mergeSets, mergeSets)
+    val aggregate:RDD[(String, Set[String])] = inclusionLists.combineByKey(createFromSetCombiner, intersectSets, intersectSets)
 
     val sorted:RDD[(String, Set[String])] = aggregate.filter(row => !row._2.isEmpty).sortBy(_._1)
 
@@ -94,5 +99,7 @@ object TeamSchlau {
       })
       println(entry._1 + " < " + dependencyString)
     })
+
+    println("DONE IN " + (System.currentTimeMillis() - startTime) / 1000 + " s (" + (System.currentTimeMillis() - startTime) / 60000.0 + " min)")
   }
 }
