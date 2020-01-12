@@ -6,12 +6,13 @@ import org.apache.spark.sql.{DataFrame, Dataset, SparkSession}
 
 object TeamSchlau {
 
-  def createCombiner = (value: (String)) => Set(value)
+  def createFromStringCombiner = (value: (String)) => Set(value)
+  def createFromSetCombiner = (value: (Set[String])) => value
 
-  def mergeValue = (accumulator: Set[String], element: String) =>
+  def mergeStringsToSet = (accumulator: Set[String], element: String) =>
     (accumulator + element)
 
-  def mergeCombiner = (accumulator1: (Set[String]), accumulator2: (Set[String])) =>
+  def mergeSets = (accumulator1: (Set[String]), accumulator2: (Set[String])) =>
     (accumulator1.union(accumulator2))
 
 
@@ -32,7 +33,7 @@ object TeamSchlau {
 
     val cores = arguments.getCores*/
     val cores = 1
-    val datasetPath = "./data/testdata"
+    val datasetPath = "./data/TPCH"
 
     // Get all .csv-files for the dataset path
     val fileRegex = """.*\.csv$""".r
@@ -73,12 +74,18 @@ object TeamSchlau {
 
     val columnNameValueTuples: Dataset[(String, String)] = columnNameValueTuplesPerDataset.reduce((datasetAccumulator, dataset) => datasetAccumulator.union(dataset))
 
-    val attributeSets:RDD[(Set[String])] = columnNameValueTuples.rdd.combineByKey(createCombiner, mergeValue, mergeCombiner).map(entry => entry._2)
+    val attributeSets:RDD[(Set[String])] = columnNameValueTuples.rdd.combineByKey(createFromStringCombiner, mergeStringsToSet, mergeSets).map(entry => entry._2)
 
-    val inclusionLists:RDD[(String, Set[String])] = attributeSets
-      .flatMap(row => row.toSeq.map(entry => (entry, row.filter(a => !a.equals(entry)))))
+    val inclusionLists:RDD[(String, Set[String])] = attributeSets.flatMap(row => row.toSeq.map(entry => (entry, row.filter(a => !a.equals(entry)))))
 
-    inclusionLists.collect().foreach(println)
+    val aggregate:RDD[(String, Set[String])] = inclusionLists.combineByKey(createFromSetCombiner, mergeSets, mergeSets)
+
+
+    aggregate.collect().map(entry => {
+      println(entry._1 + " < " + entry._2.toString())
+    })
+
+    aggregate.collect().foreach(println)
 
   }
 }
