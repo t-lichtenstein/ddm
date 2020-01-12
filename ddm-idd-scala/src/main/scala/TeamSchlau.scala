@@ -2,6 +2,7 @@ import java.io.File
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.{DataFrame, Dataset, SparkSession}
+
 import scala.collection.immutable.SortedSet
 
 object TeamSchlau {
@@ -20,25 +21,17 @@ object TeamSchlau {
     (accumulator1.intersect(accumulator2))
 
   def main(args: Array[String]): Unit = {
-    // Parse input arguments
-    /*val arguments = new Args();
-    JCommander
-      .newBuilder
-      .addObject(arguments)
-      .build
-      .parse(args)
+    /* Parse Input Argument
+    Default: path=./data/TPCH | cores=4
+    */
+    var cores = 4
+    var datasetPath = "./data/TPCH"
+    args.sliding(2, 2).toList.collect {
+      case Array("--cores", argCores: String) => cores = argCores.toInt
+      case Array("--path", argPath: String) => datasetPath = argPath
+    }
 
-    val datasetPath = FileSystems
-      .getDefault
-      .getPath(arguments.getDatasetPath)
-      .toAbsolutePath
-      .toString
-
-    val cores = arguments.getCores*/
-    val cores = 4
-    val datasetPath = "./data/TPCH"
-
-    // Get all .csv-file paths in the dataset path
+    // Gather all CSV-Files in the Specified Path as List
     val fileRegex = """.*\.csv$""".r
     val directory = new File(datasetPath)
     val files = directory
@@ -54,12 +47,12 @@ object TeamSchlau {
       .master(s"local[$cores]")
       .getOrCreate()
 
-    session.conf.set("spark.sql.shuffle.partitions", "16")
-    import session.implicits._
+    //session.conf.set("spark.sql.shuffle.partitions", "16")
 
+    import session.implicits._
     val startTime = System.currentTimeMillis();
 
-    // Read .csv-files
+    // Read CSV-Files into a DataFrame-Format
     val datasets: Seq[DataFrame] = files.map(file => {
       session.read
         .option("header", "true")
@@ -68,9 +61,11 @@ object TeamSchlau {
         .csv(file.getAbsolutePath)
     })
 
-    // Find inclusion dependencies
+    /* Find Inclusion Dependencies
+    The general procedure is taken from the paper "Scaling Out the Discovery of Inclusion Dependencies" introduced in the lecture.
+    * */
 
-    // Get all value, column name tuples for each dataset
+    // Create the (Cell, ColumnName)-Pairs from the Input Tuples
     val datasetColumnNameValueTuples:Seq[Dataset[(String, String)]] = datasets.map(dataset => {
       val columnNames = dataset.columns
       dataset.flatMap(row => {
@@ -78,30 +73,29 @@ object TeamSchlau {
       })
     })
 
-    // Merge all sequences of tuples
     val columnNameValueTuples: Dataset[(String, String)] = datasetColumnNameValueTuples
       .reduce((datasetAccumulator, dataset) => datasetAccumulator.union(dataset))
 
-    // Get all attribute sets
+    // Convert the (Cell, ColumnName)-Pairs to the Attribute Sets by Cache-Based Preaggregation and Global Partitioning
     val attributeSets:RDD[(Set[String])] = columnNameValueTuples
       .rdd
       .combineByKey(createSetFromStringCombiner, mergeStringsToSet, mergeSets)
       .map(entry => entry._2)
 
-    // Generate subset entries for each entry
+    // Create the Inclusion Lists from the Attribute Sets
     val inclusionLists:RDD[(String, Set[String])] = attributeSets
       .flatMap(row => row.toSeq.map(entry => (entry, row.filter(a => !a.equals(entry)))))
 
-    // Merge all entries by intersection
+    // Partition and Aggregate the Inclusion Lists as IND's
     val aggregatedDependencies:RDD[(String, Set[String])] = inclusionLists
       .combineByKey(createSetFromSetCombiner, intersectSets, intersectSets)
 
-    // Filter entries with no dependency and sort all entries
+    // Filter IND's for Empty Entries and Sort them Lexicographically
     val sortedDependencies:RDD[(String, Set[String])] = aggregatedDependencies
       .filter(row => !row._2.isEmpty)
       .sortBy(_._1)
 
-    // Format and print the result
+    // Format and Print the resulting IND's
     sortedDependencies
       .collect()
       .map(entry => {
@@ -120,4 +114,5 @@ object TeamSchlau {
       (System.currentTimeMillis() - startTime) / 1000.0 + " s (" +
       (System.currentTimeMillis() - startTime) / 60000.0 + " min)")
   }
+
 }
