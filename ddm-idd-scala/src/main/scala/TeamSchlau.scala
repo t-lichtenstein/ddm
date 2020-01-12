@@ -1,14 +1,20 @@
-import java.io.{File, IOException}
-import java.nio.file.{FileSystems, Files, Path, Paths}
-import java.util
-import java.util.stream.Collectors
+import java.io.{File}
 
-import com.beust.jcommander.JCommander
-import org.apache.spark.SparkConf
-import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.{DataFrame, Dataset, SparkSession}
 
 
 object TeamSchlau {
+
+  def createCombiner = (value: (String)) => Set(value)
+
+  def mergeValue = (accumulator: Set[String], element: String) =>
+    (accumulator + element)
+
+  def mergeCombiner = (accumulator1: (Set[String]), accumulator2: (Set[String])) =>
+    (accumulator1.union(accumulator2))
+
+
   def main(args: Array[String]): Unit = {
     // Parse input arguments
     /*val arguments = new Args();
@@ -25,7 +31,7 @@ object TeamSchlau {
       .toString
 
     val cores = arguments.getCores*/
-    val cores = 4
+    val cores = 1
     val datasetPath = "./data/testdata"
 
     // Get all .csv-files for the dataset path
@@ -37,17 +43,18 @@ object TeamSchlau {
       .toList
 
     // Configure Spark session
-    val sparkSess: SparkSession = SparkSession
+    val sparkSession: SparkSession = SparkSession
       .builder()
       .appName("Team Schlau")
-      .master(s"local[$cores]") // local, with <cores> worker cores
+      .master(s"local[$cores]")
       .getOrCreate()
 
-    sparkSess.conf.set("spark.sql.shuffle.partitions", "16")
+    sparkSession.conf.set("spark.sql.shuffle.partitions", "16")
+    import sparkSession.implicits._
 
     // Read .csv-files
     val datasets: Seq[DataFrame] = files.map(file => {
-      sparkSess.read
+      sparkSession.read
         .option("inferSchema", "true")
         .option("header", "true")
         .option("quote", "\"")
@@ -55,10 +62,23 @@ object TeamSchlau {
         .csv(file.getAbsolutePath)
     })
 
-    print("\nSTART\n\n")
-    datasets(0).show()
-
+    println("\nSTART\n")
     // Find inclusion dependencies
-    // TODO: Find inclusion dependencies
+    val columnNameValueTuplesPerDataset:Seq[Dataset[(String, String)]] = datasets.map(dataset => {
+      val columnNames = dataset.columns
+      dataset.flatMap(row => {
+        row.toSeq.zipWithIndex.map{case(cell, index) => (cell.toString, columnNames(index))}
+      })
+    })
+
+    val columnNameValueTuples: Dataset[(String, String)] = columnNameValueTuplesPerDataset.reduce((datasetAccumulator, dataset) => datasetAccumulator.union(dataset))
+
+    val attributeSets:RDD[(Set[String])] = columnNameValueTuples.rdd.combineByKey(createCombiner, mergeValue, mergeCombiner).map(entry => entry._2)
+
+    val inclusionLists:RDD[(String, Set[String])] = attributeSets
+      .flatMap(row => row.toSeq.map(entry => (entry, row.filter(a => !a.equals(entry)))))
+
+    inclusionLists.collect().foreach(println)
+
   }
 }
