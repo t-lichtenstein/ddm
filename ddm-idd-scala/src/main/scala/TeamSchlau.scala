@@ -1,7 +1,9 @@
-import java.io.{File}
+import java.io.File
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.{DataFrame, Dataset, SparkSession}
+
+import scala.collection.immutable.SortedSet
 
 
 object TeamSchlau {
@@ -32,8 +34,8 @@ object TeamSchlau {
       .toString
 
     val cores = arguments.getCores*/
-    val cores = 1
-    val datasetPath = "./data/TPCH"
+    val cores = 4
+    val datasetPath = "./data/testdata"
 
     // Get all .csv-files for the dataset path
     val fileRegex = """.*\.csv$""".r
@@ -63,7 +65,6 @@ object TeamSchlau {
         .csv(file.getAbsolutePath)
     })
 
-    println("\nSTART\n")
     // Find inclusion dependencies
     val columnNameValueTuplesPerDataset:Seq[Dataset[(String, String)]] = datasets.map(dataset => {
       val columnNames = dataset.columns
@@ -80,12 +81,18 @@ object TeamSchlau {
 
     val aggregate:RDD[(String, Set[String])] = inclusionLists.combineByKey(createFromSetCombiner, mergeSets, mergeSets)
 
+    val sorted:RDD[(String, Set[String])] = aggregate.filter(row => !row._2.isEmpty).sortBy(_._1)
 
-    aggregate.collect().map(entry => {
-      println(entry._1 + " < " + entry._2.toString())
+    sorted.collect().map(entry => {
+      val sortedDependencies = SortedSet[String]() ++ entry._2
+      val dependencyString = sortedDependencies.reduce((acc, entry) => {
+        if (acc.equals("")) {
+          acc + entry
+        } else {
+          acc + ", " + entry
+        }
+      })
+      println(entry._1 + " < " + dependencyString)
     })
-
-    aggregate.collect().foreach(println)
-
   }
 }
