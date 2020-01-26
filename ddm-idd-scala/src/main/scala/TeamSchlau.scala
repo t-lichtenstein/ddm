@@ -22,10 +22,10 @@ object TeamSchlau {
 
   def main(args: Array[String]): Unit = {
     /* Parse Input Argument
-    Default: path=./data/TPCH | cores=4
+    Default: path=./TPCH | cores=4
     */
     var cores = 4
-    var datasetPath = "./data/TPCH"
+    var datasetPath = "./TPCH"
     args.sliding(2, 2).toList.collect {
       case Array("--cores", argCores: String) => cores = argCores.toInt
       case Array("--path", argPath: String) => datasetPath = argPath
